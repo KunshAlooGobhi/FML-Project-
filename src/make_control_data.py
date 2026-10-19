@@ -23,6 +23,20 @@ def main(n_users=5000, n_items=2000, dim=8, groups=10):
         rows += [(f"CU{u}", f"CP{i}", u, i, r, t0 + pd.Timedelta(days=int(d))) for i, r, d in zip(items, rating, days)]
     df = pd.DataFrame(rows, columns=["user_id", "product_id", "u", "i", "rating", "purchase_date"])
     df.to_csv(PROCESSED_DIR / "control_interactions.csv.gz", index=False)
+    # SIMULATED item descriptions: words partly depend on the item's hidden taste group (like real product text
+    # correlates with what an item is), with noise. A separate rng keeps the interactions above unchanged.
+    r2 = np.random.default_rng(SEED + 1)
+    best_group = np.argmax(V @ centers.T, axis=1)
+    texts = []
+    for i in range(n_items):
+        words = []
+        for _ in range(12):
+            x = r2.random()
+            if x < 0.6:  words.append(f"g{best_group[i]}w{r2.integers(30)}")       # own-group vocabulary
+            elif x < 0.7: words.append(f"g{r2.integers(groups)}w{r2.integers(30)}")  # random other group
+            else:         words.append(f"w{r2.integers(200)}")                     # generic words
+        texts.append(" ".join(words))
+    pd.DataFrame({"i": range(n_items), "text": texts}).to_csv(PROCESSED_DIR / "control_items.csv.gz", index=False)
     print(f"control data: {len(df):,} interactions, {df.u.nunique():,} users, {df.i.nunique():,} items (SIMULATED)")
 
 if __name__ == "__main__":

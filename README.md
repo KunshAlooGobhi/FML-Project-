@@ -23,6 +23,12 @@ A leakage-aware study of collaborative, content-based and hybrid recommenders on
 - Best ALS/BPR settings on the control sit at the grid edge (factors=32); the control has only 8 latent dimensions.
 - Ties in scores are broken by a tiny training-popularity bonus. Validation only; the locked test has not been scored.
 
+## Phase 3-4 results (validation only; `reports/content_amazon.md`, `reports/hybrid_validation_control.md`)
+- **Content model, real Amazon text** (no users, so a proxy task: same leaf category): held-out NDCG@10 0.567 vs random 0.038 and popularity 0.046. Review text helps (0.530 -> 0.567). Best Table II setting: max_features=5000, ngram (1,2).
+- **Hybrid, simulated control only** (real text and real purchases cannot be linked): on warm users the best blend weight is w=0, i.e. content does not improve on item-kNN (NDCG@10 0.183 vs content-only 0.013).
+- **Cold-item stress test** (200 items hidden from training): collaborative filtering scores 0; the adaptive hybrid (content-only for items with no history) reaches HitRate@10 4.2% at w=0.1 and 6.5% at w=0.3. Cost: NDCG@10 on ordinary purchases drops 0.189 -> 0.170 because new items take list slots.
+- Control cold-item slice in the real validation split has only 7 rows, so the stress test is simulated.
+
 ## Run
 ```
 cd src
