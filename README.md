@@ -17,6 +17,12 @@ A leakage-aware study of collaborative, content-based and hybrid recommenders on
 - `amazon_ecommerce_1M.csv` is consistent with purely random purchases (`reports/signal_diagnostics.md`): all baselines tie with random (NDCG@10 ~ 5e-5).
 - **Positive control** (`src/make_control_data.py`): a SIMULATED dataset with a planted taste pattern. The same pipeline finds it (popularity NDCG@10 0.059 vs random 0.002), so the evaluation code is sound. It is synthetic and is never presented as real data.
 
+## Phase 3 results (validation, warm users; `reports/models_validation_*.md`)
+- Control (simulated, 4,903 users): item-kNN NDCG@10 0.183 > ALS 0.169 > BPR 0.137 > tuned popularity 0.059 > SVD 0.053 > random 0.003. Item-kNN/ALS/BPR beat popularity; biased SVD (a rating predictor) does not.
+- 1M file (5,000 seeded warm validation users, reduced grids because of a 2-core / 3 GB machine): every model is at or near 0, so nothing is learnable, consistent with `reports/signal_diagnostics.md`.
+- Best ALS/BPR settings on the control sit at the grid edge (factors=32); the control has only 8 latent dimensions.
+- Ties in scores are broken by a tiny training-popularity bonus. Validation only; the locked test has not been scored.
+
 ## Run
 ```
 cd src

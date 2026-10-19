@@ -4,10 +4,7 @@ import numpy as np, pandas as pd
 from config import PROCESSED_DIR, ROOT, SEED
 from evaluate import user_sets, evaluate, ranked_list_recommender
 
-def main(prefix=""):
-    rd = lambda n: pd.read_csv(PROCESSED_DIR / f"{prefix}{n}.csv.gz", parse_dates=["purchase_date"])
-    train, val = rd("train"), rd("val")
-    n_items = pd.concat([train.i, val.i]).nunique()
+def build_rankings(train):
     end = train.purchase_date.max()
     rng = np.random.default_rng(SEED)
 
@@ -19,6 +16,15 @@ def main(prefix=""):
     g = train.groupby("i").rating.agg(["sum", "count"])           # Bayesian average: shrink small-sample means to global mean
     m, mu = 20, train.rating.mean()
     rankings["bayes_rating"] = ((g["sum"] + m * mu) / (g["count"] + m)).sort_values(ascending=False).index
+
+    return rankings
+
+def main(prefix=""):
+    rd = lambda n: pd.read_csv(PROCESSED_DIR / f"{prefix}{n}.csv.gz", parse_dates=["purchase_date"])
+    train, val = rd("train"), rd("val")
+    n_items = pd.concat([train.i, val.i]).nunique()
+    rankings = build_rankings(train)
+    mu = train.rating.mean()
 
     seen, rel_any = user_sets(train, val)
     _, rel_good = user_sets(train, val, min_rating=4.0)

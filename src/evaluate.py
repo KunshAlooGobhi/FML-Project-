@@ -42,3 +42,42 @@ def ranked_list_recommender(ranking):
                     break
         return out
     return rec
+
+
+# ---------- batch evaluation for score-matrix models (kNN, SVD, ALS, BPR) ----------
+def warm_eval_users(R, rel, max_users=None, seed=42):
+    """Users who have training history (R = train user-item csr) and >=1 validation purchase.
+    If max_users is set, a seeded random sample - identical for every model, so comparisons stay fair."""
+    has_hist = np.diff(R.indptr) > 0
+    users = np.array(sorted(u for u in rel if u < R.shape[0] and has_hist[u]))
+    if max_users and len(users) > max_users:
+        users = np.sort(np.random.default_rng(seed).choice(users, max_users, replace=False))
+    return users
+
+def evaluate_batch(score_fn, R, rel, users, n_items, ks=KS, batch=400):
+    """score_fn(user_array) -> (len(users), n_items) float32 scores. Seen (train) items are masked out."""
+    maxk, rows, shown = max(ks), [], set()
+    for s in range(0, len(users), batch):
+        ub = users[s:s + batch]
+        sc = np.asarray(score_fn(ub), dtype=np.float32)
+        for r, u in enumerate(ub):
+            sc[r, R.indices[R.indptr[u]:R.indptr[u + 1]]] = -np.inf
+        part = np.argpartition(-sc, maxk - 1, axis=1)[:, :maxk]
+        order = np.argsort(-np.take_along_axis(sc, part, 1), axis=1)
+        top = np.take_along_axis(part, order, 1)
+        for r, u in enumerate(ub):
+            recs, relevant = top[r].tolist(), rel[u]
+            row = {"u": u}
+            for k in ks:
+                row[f"P@{k}"] = precision_at_k(recs, relevant, k)
+                row[f"R@{k}"] = recall_at_k(recs, relevant, k)
+                row[f"HR@{k}"] = hit_rate_at_k(recs, relevant, k)
+                row[f"MAP@{k}"] = average_precision_at_k(recs, relevant, k)
+                row[f"NDCG@{k}"] = ndcg_at_k(recs, relevant, k)
+            shown.update(recs[:10])
+            rows.append(row)
+    per_user = pd.DataFrame(rows)
+    summary = per_user.drop(columns="u").mean().to_dict()
+    summary["coverage@10"] = len(shown) / n_items
+    summary["users"] = len(per_user)
+    return per_user, summary
