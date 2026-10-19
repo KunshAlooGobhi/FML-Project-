@@ -29,6 +29,23 @@ A leakage-aware study of collaborative, content-based and hybrid recommenders on
 - **Cold-item stress test** (200 items hidden from training): collaborative filtering scores 0; the adaptive hybrid (content-only for items with no history) reaches HitRate@10 4.2% at w=0.1 and 6.5% at w=0.3. Cost: NDCG@10 on ordinary purchases drops 0.189 -> 0.170 because new items take list slots.
 - Control cold-item slice in the real validation split has only 7 rows, so the stress test is simulated.
 
+## Phase 5: locked-test results (each model scored once; `reports/final_test_control.md`, `reports/final_test_main.md`)
+Settings were frozen from validation in `manifests/frozen_settings.json` (committed before any test scoring). Final models are refit on train + validation.
+- **Control (simulated), 4,912 warm users, NDCG@10:** item-kNN 0.199 > hybrid 0.194 > ALS 0.193 > BPR 0.147 > tuned popularity 0.063 > SVD 0.057 > content 0.014 > random 0.003. Item-kNN, ALS, BPR and the hybrid beat popularity (95% CI excludes zero, Bonferroni-adjusted p < 0.05, 7 comparisons). SVD and content do not. The validation ranking is unchanged on the test (E7).
+- **1M file, 5,000 seeded warm users:** no model is distinguishable from tuned popularity or from random (all CIs include zero); the model order reshuffles between validation and test. Rating-prediction models are slightly WORSE than the global mean (Table IV). Consistent with `reports/signal_diagnostics.md`.
+- E3 (`reports/e3_training_size_control.md`, validation only): with 25% of the data item-kNN falls below popularity (0.028 vs 0.054) while ALS still beats it (0.070).
+- Tables III and IV and E2, E5, E6, E7 are in the two reports above; figures in `reports/figures/`.
+
+## Deviations from the partial report (all documented)
+1. k-core is 2, not 5 (only 5,094 of 603,815 users have >= 5 purchases).
+2. The two Kaggle datasets are never merged (ids do not link; the review file has no users).
+3. The 1M file is judged on a seeded sample of 5,000 warm users with reduced grids (single factor count) because of a 2-core / 3 GB machine.
+4. Hybrid and content-vs-purchase evaluation use a SIMULATED control dataset; the real Amazon content model is evaluated on a proxy task (same leaf category), not on purchases.
+5. Final models are refit on train + validation with frozen settings; ties in validation -> first setting in grid order.
+6. BPR (`implicit`, multi-threaded) is not bit-for-bit reproducible between runs (differences of about 0.0002 NDCG@10).
+7. Diversity is computed only where item text exists (the control data).
+8. Single seed (42); run-to-run variability is not captured.
+
 ## Run
 ```
 cd src
