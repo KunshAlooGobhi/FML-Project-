@@ -1,0 +1,74 @@
+{
+  "_note": "Frozen from validation results only. Ties -> first setting in grid order. Final models are refit on train+validation.",
+  "_sources": "reports/models_*_*.csv, reports/hybrid_validation_control.md",
+  "control": {
+    "eval_users_max": null,
+    "popularity": {
+      "variant": "popularity_all"
+    },
+    "itemknn": {
+      "k": 100,
+      "shrink": 0
+    },
+    "svd": {
+      "factors": 32,
+      "reg": 0.1,
+      "lr": 0.005
+    },
+    "als": {
+      "factors": 32,
+      "reg": 0.1,
+      "alpha": 10.0
+    },
+    "bpr": {
+      "factors": 32,
+      "reg": 0.01,
+      "lr": 0.01
+    },
+    "bias_baseline": {
+      "lambda": 10,
+      "validation_rmse": 0.62594
+    },
+    "content": {
+      "max_features": 5000,
+      "ngram": [
+        1,
+        2
+      ]
+    },
+    "hybrid": {
+      "w_validation_best": 0.0,
+      "adaptive_w": 0.1,
+      "note": "validation-best global weight is 0 (= item-kNN); the adaptive variant (content-only for items with no history, w=0.1) is the declared cold-start design"
+    }
+  },
+  "main": {
+    "eval_users_max": 5000,
+    "popularity": {
+      "variant": "popularity_all"
+    },
+    "itemknn": {
+      "k": 20,
+      "shrink": 0
+    },
+    "svd": {
+      "factors": 32,
+      "reg": 0.02,
+      "lr": 0.005
+    },
+    "als": {
+      "factors": 32,
+      "reg": 0.01,
+      "alpha": 10.0
+    },
+    "bpr": {
+      "factors": 32,
+      "reg": 0.01,
+      "lr": 0.01
+    },
+    "bias_baseline": {
+      "lambda": 50,
+      "validation_rmse": 0.51927
+    }
+  }
+}
