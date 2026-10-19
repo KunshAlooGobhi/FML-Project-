@@ -68,3 +68,5 @@ cd src && python make_manifest.py
 - `requirements.txt`: pinned versions (`pip install -r requirements.txt`).
 
 - `reports/final_report.md` (and `.docx`): the full report in the order of the partial report, built by `src/assemble_report.py`. `REPRODUCE.md` lists every command.
+
+- UI: `streamlit run src/app.py` (tab 1: top-10 for a simulated user next to the popularity list; tab 2: similar real Amazon products).

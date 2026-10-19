@@ -47,6 +47,7 @@ python build_figures.py        # reports/figures/*.png
 python build_report.py         # reports/final_report_sections.md (V to VII)
 python assemble_report.py      # reports/final_report.md (full report)
 python demo.py user CU42       # top-10 demo; also: demo.py product polo golf
+streamlit run app.py           # browser UI (run from src/)
 ```
 
 ## Checks before submitting
