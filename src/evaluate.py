@@ -54,9 +54,9 @@ def warm_eval_users(R, rel, max_users=None, seed=42):
         users = np.sort(np.random.default_rng(seed).choice(users, max_users, replace=False))
     return users
 
-def evaluate_batch(score_fn, R, rel, users, n_items, ks=KS, batch=400):
+def evaluate_batch(score_fn, R, rel, users, n_items, ks=KS, batch=400, return_recs=False):
     """score_fn(user_array) -> (len(users), n_items) float32 scores. Seen (train) items are masked out."""
-    maxk, rows, shown = max(ks), [], set()
+    maxk, rows, shown, recs_all = max(ks), [], set(), {}
     for s in range(0, len(users), batch):
         ub = users[s:s + batch]
         sc = np.asarray(score_fn(ub), dtype=np.float32)
@@ -74,10 +74,10 @@ def evaluate_batch(score_fn, R, rel, users, n_items, ks=KS, batch=400):
                 row[f"HR@{k}"] = hit_rate_at_k(recs, relevant, k)
                 row[f"MAP@{k}"] = average_precision_at_k(recs, relevant, k)
                 row[f"NDCG@{k}"] = ndcg_at_k(recs, relevant, k)
-            shown.update(recs[:10])
+            shown.update(recs[:10]); recs_all[int(u)] = recs
             rows.append(row)
     per_user = pd.DataFrame(rows)
     summary = per_user.drop(columns="u").mean().to_dict()
     summary["coverage@10"] = len(shown) / n_items
     summary["users"] = len(per_user)
-    return per_user, summary
+    return (per_user, summary, recs_all) if return_recs else (per_user, summary)
