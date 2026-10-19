@@ -1,0 +1,9 @@
+# Raw/processed data is large (1M-row CSV = 127 MB) and not committed. Reproduce via manifests/.
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+*.pyc

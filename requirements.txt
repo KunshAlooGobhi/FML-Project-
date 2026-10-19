@@ -1,0 +1,9 @@
+# Versions get pinned exactly (pip freeze) once the environment is installed - see Phase 0.
+pandas
+numpy
+scipy
+scikit-learn
+matplotlib
+jupyter
+implicit
+scikit-surprise
