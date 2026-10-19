@@ -4,8 +4,8 @@ import numpy as np, pandas as pd
 from config import PROCESSED_DIR, ROOT, SEED
 from evaluate import user_sets, evaluate, ranked_list_recommender
 
-def main():
-    rd = lambda n: pd.read_csv(PROCESSED_DIR / f"{n}.csv.gz", parse_dates=["purchase_date"])
+def main(prefix=""):
+    rd = lambda n: pd.read_csv(PROCESSED_DIR / f"{prefix}{n}.csv.gz", parse_dates=["purchase_date"])
     train, val = rd("train"), rd("val")
     n_items = pd.concat([train.i, val.i]).nunique()
     end = train.purchase_date.max()
@@ -42,12 +42,12 @@ def main():
     ma = lambda p: float((val.rating - p).abs().mean())
 
     (ROOT / "reports").mkdir(exist_ok=True)
-    res.round(5).to_csv(ROOT / "reports" / "baselines_validation.csv")
+    res.round(5).to_csv(ROOT / "reports" / f"baselines_validation{'_' + prefix.strip('_') if prefix else ''}.csv")
     md = ["# Baselines on VALIDATION (from src/baselines.py)\n",
           f"Validation users with >=1 purchase: {len(rel_any):,} ({sum(u in seen for u in rel_any):,} seen in train). Best by NDCG@10: **{best}**.\n",
           res.round(5).to_markdown(), "",
           f"Rating prediction (validation): global mean RMSE {rm(mu):.4f}, MAE {ma(mu):.4f}; item-mean RMSE {rm(pred_item):.4f}, MAE {ma(pred_item):.4f}."]
-    (ROOT / "reports" / "baselines_validation.md").write_text("\n".join(md) + "\n")
+    (ROOT / "reports" / f"baselines_validation{'_' + prefix.strip('_') if prefix else ''}.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
 
 if __name__ == "__main__":

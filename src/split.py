@@ -11,8 +11,8 @@ def tag(rows, train):
              for u, i in zip(user_seen, item_seen)]
     return rows.assign(slice=label)
 
-def main():
-    df = pd.read_csv(PROCESSED_DIR / "interactions_k2.csv.gz", parse_dates=["purchase_date"])
+def main(src="interactions_k2", prefix=""):
+    df = pd.read_csv(PROCESSED_DIR / f"{src}.csv.gz", parse_dates=["purchase_date"])
     df = df.sort_values("purchase_date", kind="stable").reset_index(drop=True)
     t1 = df.purchase_date.iloc[int(len(df) * SPLIT[0])]
     t2 = df.purchase_date.iloc[int(len(df) * (SPLIT[0] + SPLIT[1]))]
@@ -22,7 +22,7 @@ def main():
     assert train.purchase_date.max() < val.purchase_date.min() <= val.purchase_date.max() < test.purchase_date.min()
     val, test = tag(val, train), tag(test, train)
     for name, d in (("train", train), ("val", val), ("test", test)):
-        d.to_csv(PROCESSED_DIR / f"{name}.csv.gz", index=False)
+        d.to_csv(PROCESSED_DIR / f"{prefix}{name}.csv.gz", index=False)
     lines = ["# Split summary (time-based; from src/split.py)\n",
              "| set | rows | share | from | to |", "|---|---|---|---|---|"]
     for name, d in (("train", train), ("validation", val), ("test (locked)", test)):
@@ -31,7 +31,7 @@ def main():
     for name, d in (("validation", val), ("test", test)):
         c = d.slice.value_counts()
         lines.append(f"| {name} | {c.get('warm',0):,} ({c.get('warm',0)/len(d):.1%}) | {c.get('cold-item',0):,} ({c.get('cold-item',0)/len(d):.1%}) | {c.get('cold-user',0):,} ({c.get('cold-user',0)/len(d):.1%}) |")
-    (ROOT / "reports" / "split_summary.md").write_text("\n".join(lines) + "\n")
+    (ROOT / "reports" / f"split_summary{'_' + prefix.strip('_') if prefix else ''}.md").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
 
 if __name__ == "__main__":
