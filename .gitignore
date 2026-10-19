@@ -7,3 +7,6 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 *.pyc
+
+# per-model result pickles (binary working files; the .md reports are the record)
+reports/final_*_*/
