@@ -66,3 +66,5 @@ cd src && python make_manifest.py
 - Demo: `python src/demo.py list`, `python src/demo.py user CU42` (top-10 for a simulated user; validation hits marked with a tick), `python src/demo.py product polo golf` (related real Amazon products).
 - `reports/viva_notes.md`: questions and answers for every phase.
 - `requirements.txt`: pinned versions (`pip install -r requirements.txt`).
+
+- `reports/final_report.md` (and `.docx`): the full report in the order of the partial report, built by `src/assemble_report.py`. `REPRODUCE.md` lists every command.
