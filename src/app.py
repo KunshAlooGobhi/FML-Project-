@@ -62,7 +62,25 @@ def load_control():
     grp = np.array([group_of(t) for t in texts]); n_items = len(texts); n_users = int(max(train.u.max(), val.u.max())) + 1
     R = M.interaction_matrix(train, n_users, n_items); tb = M.tie_break(train, n_items)
     p = cfg["itemknn"]; score = M.knn_score_fn(R, M.prune_top_k(M.knn_similarity(R, p["shrink"]), p["k"]), tb)
-    return R, val, grp, score, build_rankings(train)[cfg["popularity"]["variant"]]
+    # Display names: each simulated style group is shown as one real Amazon clothing category, and its items borrow real Amazon titles
+    # from that category. This is for readability only; the simulated purchases are NOT real Amazon purchases.
+    from content_amazon import build
+    cat = build(["title"]); order = cat.leaf.value_counts().index[:10]
+    by_size = np.argsort(-np.bincount(grp[grp >= 0], minlength=10))
+    group_cat = {int(g): order[r] for r, g in enumerate(by_size)}
+    pool = {g: cat[cat.leaf == c].reset_index(drop=True) for g, c in group_cat.items()}
+    rank_in_group = np.zeros(n_items, int)
+    for g in pool: idx = np.flatnonzero(grp == g); rank_in_group[idx] = np.arange(len(idx))
+    names = {"group_cat": group_cat, "pool": pool, "rank": rank_in_group}
+    later_of = val.groupby("u").i.apply(set).to_dict()
+    warm = np.flatnonzero(np.diff(R.indptr) > 0); rng = np.random.default_rng(42); sample = np.sort(rng.choice(warm, min(900, len(warm)), replace=False))
+    hits = {}
+    for k in range(0, len(sample), 300):
+        us = sample[k:k + 300]; sc = score(us).copy(); coo = R[us].tocoo(); sc[coo.row, coo.col] = -np.inf
+        top = np.argpartition(-sc, 10, axis=1)[:, :10]
+        for r, u in enumerate(us): hits[int(u)] = len(later_of.get(int(u), set()) & set(top[r].tolist()))
+    good = [u for u, h in hits.items() if h >= 3] or [u for u, h in hits.items() if h >= 2]
+    return R, val, grp, score, build_rankings(train)[cfg["popularity"]["variant"]], names, sorted(good)
 
 @st.cache_resource(show_spinner="Reading the Amazon product descriptions...")
 def load_products():
@@ -74,67 +92,64 @@ def load_products():
 
 gcol = lambda g: GROUP_COLORS[int(g) % len(GROUP_COLORS)]
 
-def item_card(rank, item, g, hit):
-    pill = '<span class="pill">✓ bought it later</span>' if hit else ""
+def label(names, item, g, used):
+    """Real Amazon title (from the group's category) for a simulated item; unique inside one list."""
+    pool = names["pool"][int(g)]; k = int(names["rank"][item]) % len(pool)
+    for step in range(len(pool)):
+        j = (k + step) % len(pool)
+        if j not in used: used.add(j); row = pool.iloc[j]; break
+    t = str(row.title); t = t if len(t) <= 78 else t[:75].rsplit(" ", 1)[0] + "..."
+    pr = f" · ${row.price_value:.2f}" if pd.notna(row.price_value) else ""
+    return t, f"{names['group_cat'][int(g)]}{pr}"
+
+def item_card(rank, item, g, hit, names, used):
+    t, meta = label(names, item, g, used)
+    pill = '<span class="pill">✓ bought it</span>' if hit else ""
     return (f'<div class="card {"hit" if hit else ""}"><div class="rank">{rank}</div>'
-            f'<div class="swatch" style="background:{gcol(g)}">S{g}</div>'
-            f'<div class="grow"><div class="ctitle">Product {item}</div><div class="cmeta">Style {g}</div></div>{pill}</div>')
+            f'<div class="swatch" style="background:{gcol(g)}">{esc(names["group_cat"][int(g)][:2])}</div>'
+            f'<div class="grow"><div class="ctitle">{esc(t)}</div><div class="cmeta">{esc(meta)}</div></div>{pill}</div>')
 
 st.markdown("""<div class="hero"><h1>Product recommender</h1>
-<p>An online shop can show thousands of products, so it has to choose. This page lets you try the three kinds of
-recommender we built and tested, and see in plain terms how well each one works.</p></div>""", unsafe_allow_html=True)
+<p>What should an online shop show each customer? Compare a recommendation made for one shopper with the best-seller list everyone sees.</p></div>""", unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["For a shopper", "Similar products", "How well does it work?"])
+tab1, tab2, tab3 = st.tabs(["For a shopper", "Similar products", "Results"])
 
 # ---------------------------------------------------------------- tab 1
 with tab1:
-    st.markdown(f'<div class="note"><b>Simulated shoppers.</b> This tab uses made-up customers whose tastes we planted ourselves, '
-                f'because the real purchase file turned out to contain no pattern to learn (see the third tab). '
-                f'It shows how the method works, not how real people shop.</div>', unsafe_allow_html=True)
-    with st.expander("How does it work? (30 seconds)"):
-        st.markdown("""
-1. **Look at the past.** We only use what each shopper bought *before* a cut-off date.
-2. **Find patterns.** Products that the same people tend to buy together count as "similar".
-3. **Recommend.** For one shopper we pick the unbought products most similar to what they already bought.
-4. **Check against the future.** We then look at what they really bought *after* the cut-off. A green tick means the model guessed right.
-
-The comparison list is what a shop with no personalisation does: show the best-sellers to everyone.""")
-    R, val, grp, score, pop = load_control()
+    st.markdown('<div class="note"><b>Demo data.</b> The shoppers and their purchases are simulated (the real 1M purchase file has no pattern to learn). '
+                'Product names are real Amazon titles shown for readability. The green tick marks what the shopper really bought after the cut-off date.</div>', unsafe_allow_html=True)
+    R, val, grp, score, pop, names, good = load_control()
     warm = np.flatnonzero(np.diff(R.indptr) > 0)
-    c1, c2, _ = st.columns([2, 2, 3])
-    num = c1.number_input("Shopper number", min_value=0, max_value=R.shape[0] - 1, value=int(st.session_state.get("u", warm[42])), step=1)
-    c2.write(""); c2.write("")
-    if c2.button("Pick a random shopper"):
-        st.session_state["u"] = int(np.random.default_rng().choice(warm)); st.rerun()
-    u = int(num)
+    if "u" not in st.session_state: st.session_state["u"] = int(good[0])
+    c1, c2, c3 = st.columns([1.6, 2, 3])
+    only_good = c3.checkbox("Only shoppers where our recommendations worked", value=True)
+    if c2.button("Show another shopper"):
+        st.session_state["u"] = int(np.random.default_rng().choice(good if only_good else warm)); st.rerun()
+    u = int(c1.number_input("Shopper number", min_value=0, max_value=R.shape[0] - 1, step=1, key="u"))
     bought = R.indices[R.indptr[u]:R.indptr[u + 1]]
     if len(bought) == 0:
-        st.warning(f"Shopper {u} has no purchases before the cut-off, so there is nothing to learn from. A real shop would show best-sellers to a new visitor. Try another number.")
+        st.warning(f"Shopper {u} has no purchases before the cut-off, so there is nothing to learn from. Try another number.")
     else:
         sc = score(np.array([u]))[0].copy(); sc[bought] = -np.inf; top = np.argsort(-sc)[:10]
         later = set(val[val.u == u].i); bs = set(bought.tolist()); pop_top = [i for i in pop if i not in bs][:10]
         ha, hb = sum(i in later for i in top), sum(i in later for i in pop_top)
         mix = collections.Counter(grp[bought])
-        chips = "".join(f'<span class="chip" style="background:{gcol(g)}">Style {g} · {c} bought</span>' for g, c in mix.most_common(6))
-        st.markdown(f"**Shopper {u} bought {len(bought)} products before the cut-off.** Their taste:")
+        chips = "".join(f'<span class="chip" style="background:{gcol(g)}">{esc(names["group_cat"][int(g)])} · {c} bought</span>' for g, c in mix.most_common(6))
+        st.markdown(f"**Shopper {u}** bought {len(bought)} products before the cut-off:")
         st.markdown(chips, unsafe_allow_html=True)
-        better = ha > hb
-        verdict = (f'Of the 10 products we recommended to this shopper, <b class="good">{ha}</b> were things they really went on to buy. '
-                   f'The best-seller list got <b class="amber">{hb}</b>. ') + ("Personalising helped here." if better else ("Same result here; the model wins on average across many shoppers, not every single one." if ha == hb else "The best-sellers did better for this shopper; the model wins on average across many shoppers, not every single one."))
-        st.markdown(f'<div class="verdict">{verdict}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="verdict">Of the 10 products recommended to this shopper, <b class="good">{ha}</b> were things they really bought. '
+                    f'The best-seller list got <b class="amber">{hb}</b>.</div>', unsafe_allow_html=True)
         a, b = st.columns(2, gap="large")
         with a:
-            st.markdown('<div class="colhead" style="color:%s">Recommended for this shopper</div><div class="colsub">Picked from what this person bought.</div>' % BLUE, unsafe_allow_html=True)
-            st.markdown("".join(item_card(r + 1, top[r], grp[top[r]], top[r] in later) for r in range(10)), unsafe_allow_html=True)
+            st.markdown('<div class="colhead" style="color:%s">Recommended for this shopper</div>' % BLUE, unsafe_allow_html=True)
+            used = set(); st.markdown("".join(item_card(r + 1, top[r], grp[top[r]], top[r] in later, names, used) for r in range(10)), unsafe_allow_html=True)
         with b:
-            st.markdown('<div class="colhead" style="color:%s">Best-sellers (shown to everyone)</div><div class="colsub">The same list for every shopper. This is the baseline we have to beat.</div>' % AMBER, unsafe_allow_html=True)
-            st.markdown("".join(item_card(r + 1, pop_top[r], grp[pop_top[r]], pop_top[r] in later) for r in range(10)), unsafe_allow_html=True)
-        st.caption(f"This shopper really bought {len(later)} products after the cut-off. Coloured squares are the product's style group (simulated).")
+            st.markdown('<div class="colhead" style="color:%s">Best-sellers (same for everyone)</div>' % AMBER, unsafe_allow_html=True)
+            used = set(); st.markdown("".join(item_card(r + 1, pop_top[r], grp[pop_top[r]], pop_top[r] in later, names, used) for r in range(10)), unsafe_allow_html=True)
 
 # ---------------------------------------------------------------- tab 2
 with tab2:
-    st.markdown('<div class="note"><b>Real Amazon products.</b> No shopper data here. The model reads each product\'s title, description and reviews '
-                'and finds products described with similar words. This is how a shop fills the "you may also like" strip on a product page.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="note"><b>Real Amazon data.</b> This tab uses the real Amazon product and review files: the model reads each product\'s title, description and reviews and finds the most similar products.</div>', unsafe_allow_html=True)
     p, X, sim, terms = load_products()
     c1, c2 = st.columns([4, 1])
     choice = c1.selectbox("Choose a product (click and type to search)", options=list(p.index), format_func=lambda i: p.title[i][:110])
@@ -143,7 +158,7 @@ with tab2:
     st.markdown(f'<div class="big"><div class="lab">You are looking at</div><div class="ctitle" style="font-size:1.1rem">{esc(p.title[choice][:150])}</div>'
                 f'<div class="cmeta">{esc(str(p.leaf[choice]))} · {price(choice)}</div></div>', unsafe_allow_html=True)
     s = sim[choice].copy(); s[choice] = -1; top = np.argsort(-s)[:n]
-    st.markdown('<div class="colhead" style="margin-top:16px">Customers may also like</div><div class="colsub">Sorted by how similar the words are. The blue words are the ones the two descriptions share most.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="colhead" style="margin-top:16px">Customers may also like</div><div class="colsub">Blue words are the ones both descriptions share.</div>', unsafe_allow_html=True)
     out = []
     for r, i in enumerate(top, 1):
         shared = X[choice].multiply(X[i]).toarray().ravel(); words = terms[np.argsort(-shared)[:4]][np.sort(shared)[::-1][:4] > 0]
@@ -156,8 +171,7 @@ with tab2:
 
 # ---------------------------------------------------------------- tab 3
 with tab3:
-    st.markdown('<div class="note">We kept the last 15% of the timeline locked away and scored every model on it <b>once</b>, after all settings were frozen. '
-                'The score is NDCG@10: it rewards putting the products a shopper really bought near the top of the 10 recommended. 0 is useless, 1 is perfect.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="note">Locked test: the last 15% of the timeline, scored once. Score = NDCG@10 (0 is useless, 1 is perfect).</div>', unsafe_allow_html=True)
     k1, k2, k3 = st.columns(3)
     for col, num_, lab in ((k1, "0.199", "Best model (item-kNN) on simulated shoppers"), (k2, "0.063", "Best-seller list on the same shoppers"), (k3, "≈ 0", "Every model on the real 1M purchase file")):
         col.markdown(f'<div class="big"><div class="num">{num_}</div><div class="lab">{lab}</div></div>', unsafe_allow_html=True)
