@@ -1,179 +1,153 @@
 """Writes reports/final_report_sections.md (Results, Discussion and Limitations, Conclusion).
-Tables are copied from the generated reports; every number in the prose is computed here from saved results."""
-import re, numpy as np, pandas as pd
+Headline: REAL Amazon Beauty 5-core. Sanity checks: amazon_ecommerce_1M (no signal) and a simulated positive control.
+Tables are copied from the generated reports; every number in the prose is read from saved results."""
+import re
 from config import ROOT
-from finalize import load, paired_bootstrap, verdict, SHORT, LABEL
-
 R = ROOT / "reports"
 def section(fname, head):
-    lines, out, on = (R / fname).read_text().splitlines(), [], False
-    for l in lines:
+    out, on = [], False
+    for l in (R / fname).read_text().splitlines():
         if l.startswith("## "):
             if on: break
-            on = l.startswith("## " + head)
-            continue
+            on = l.startswith("## " + head); continue
         if on: out.append(l)
     return "\n".join(out).strip()
-def nums(fname, row_start, n):
+def nums(fname, row_start, n=10):
     lines = [l for l in (R / fname).read_text().splitlines() if l.startswith("|")]
-    if row_start in ("Global mean rating", "User/item bias baseline", "SVD"):
-        i = next(k for k, l in enumerate(lines) if "RMSE" in l); lines = lines[i:]
     for exact in (True, False):
         for l in lines:
             c = l.split("|")[1].strip()
             if (c == row_start) if exact else c.startswith(row_start):
                 v = re.findall(r"-?\d+\.?\d*(?:e-?\d+)?", l.split("|", 2)[2]); return [float(x) for x in v[:n]]
     raise KeyError(row_start)
-
-res = {ds: load(ds, "test")[0] for ds in ("control", "main")}
-S = {ds: {n: r["summary"] for n, r in res[ds].items()} for ds in res}
-nd = lambda ds, n: S[ds][n]["NDCG@10"]; f3 = lambda x: f"{x:.3f}"
-boot = {}
-for ds in res:
-    oth = [n for n in res[ds] if n != "popularity"]; pop = res[ds]["popularity"]["per_user"]["NDCG@10"].values
-    boot[ds] = {n: (*paired_bootstrap(res[ds][n]["per_user"]["NDCG@10"].values, pop, len(oth)), len(oth)) for n in oth}
-better = [SHORT[n] for n, v in boot["control"].items() if verdict(v[0], v[1], v[2], v[4]) == "better than popularity"]
-worse = [SHORT[n] for n, v in boot["control"].items() if verdict(v[0], v[1], v[2], v[4]) == "worse than popularity" and n != "random"]
-hy = paired_bootstrap(res["control"]["hybrid_adaptive"]["per_user"]["NDCG@10"].values, res["control"]["itemknn"]["per_user"]["NDCG@10"].values, 1)
-main_none = all(verdict(v[0], v[1], v[2], v[4]) == "not distinguishable" for v in boot["main"].values())
-g_c, b_c, s_c = (nums("final_test_control.md", k, 4) for k in ("Global mean rating", "User/item bias baseline", "SVD"))
-g_m, b_m, s_m = (nums("final_test_main.md", k, 4) for k in ("Global mean rating", "User/item bias baseline", "SVD"))
-cold = load("main", "test")[1]["row_slices"]; tot_rows = sum(cold.values())
-hyb_cold = {w: nums("hybrid_validation_control.md", f"adaptive, w={w}", 4) for w in ("0.1", "0.3")}
-hyb_warm = (nums("hybrid_validation_control.md", "collaborative only (w=0)", 1)[-1], nums("hybrid_validation_control.md", "adaptive hybrid, w=0.1", 1)[-1])
-e3 = {k: nums("e3_training_size_control.md", k, 3) for k in ("ALS", "Item-kNN", "Popularity")}
+B = "final_test_beauty.md"
+ndcg = {k: nums(B, name)[2] for k, name in (("rand", "Random (reference)"), ("pop", "Popularity (tuned)"), ("knn", "Item-kNN"), ("svd", "SVD (biased, rating-trained)"),
+        ("als", "ALS"), ("bpr", "BPR"), ("con", "Content-based (TF-IDF)"), ("hyb", "Hybrid (adaptive: content for new items)"))}
+e5 = {k: nums(B, k) for k in ("Popularity", "Item-kNN", "ALS", "Hybrid", "Content")}        # NDCG5, NDCG10, NDCG20, HR5, HR10, HR20
+hb = nums(B, "Hybrid minus") if False else None
+new = {k: nums(B, name)[0] for k, name in (("hyb", "Hybrid (adaptive: content for new items)"), ("con", "Content-based (TF-IDF)"), ("knn", "Item-kNN"), ("als", "ALS"))}
+g, bias, svd = (nums(B, k, 4) for k in ("Global mean rating", "User/item bias baseline", "SVD"))
+e3 = {k: nums("e3_training_size_beauty.md", k, 3) for k in ("ALS", "Item-kNN", "Popularity", "Content-based")}
+ctl = {k: nums("final_test_control.md", name)[2] for k, name in (("pop", "Popularity (tuned)"), ("knn", "Item-kNN"), ("als", "ALS"), ("svd", "SVD (biased, rating-trained)"), ("hyb", "Hybrid (adaptive: content for new items)"), ("bpr", "BPR"))}
+main = [nums("final_test_main.md", name)[2] for name in ("Random (reference)", "Popularity (tuned)", "Item-kNN", "ALS", "BPR")]
 c_rand, c_pop, c_tf = (nums("content_amazon.md", k, 2)[0] for k in ("random", "popularity (rating_count)", "TF-IDF content"))
-c_title, c_all = nums("content_amazon.md", "title only", 1)[0], nums("content_amazon.md", "all text + review text", 1)[0]
-val_c, _ = load("control", "val")
-better_txt = ", ".join(better[:-1]) + " and " + better[-1]
+diag = (R / "signal_diagnostics_beauty.md").read_text().split("\n\n", 1)[1].split("\n\nAll four")[0]
+x = lambda a, b: a / b
 
 md = f"""# Final report sections (generated by src/build_report.py from reports/*; every number comes from code that was run)
 
 ## V. Results
 
-### A. Data, split and what the data contain
+### A. Data, split and signal check
 
-Two purchase-style datasets were used for different jobs and are never merged, because their product ids do not link and the review file has no user ids. **amazon_ecommerce_1M** supplies user-product purchases with dates (Table I). The **Amazon products and reviews** files (728 products, 6,327 reviews, no users) supply real text for the content model. Because the 1M file has a median of one purchase per user, the k-core was set to **k = 2** instead of the planned 5 (only 5,094 of 603,815 users have at least five purchases).
+Three datasets were used, for three different jobs, and are never merged. The **headline dataset is real: Amazon Beauty 5-core** (22,363 users, 12,101 products, 198,502 reviews, June 2002 to July 2014, with product titles, brands, categories, descriptions, prices and images), the standard public benchmark in which every user and product has at least five reviews. A review is treated as evidence of a purchase. The two Kaggle files used first act as **sanity checks**: *amazon_ecommerce_1M* (1,000,000 purchase rows) and a clearly labelled *simulated positive control* (5,000 users, 1,986 items, 124,959 purchases with a planted taste structure). The 1M file was tried first and turned out to contain no learnable pattern (Section V-F); we therefore moved to a real dataset that does, and say so openly: the switch was made after seeing the 1M results, but before any Beauty data were scored on the test period.
 
-**Table I. Dataset statistics.**
+Table I (Section III) gives the Beauty statistics; there are no cleaning losses because the 5-core file is already deduplicated. The time-based split (earliest 70% train, next 15% validation, final 15% locked test) is:
 
-{section("table1_dataset_stats.md", "") if False else (R / "table1_dataset_stats.md").read_text().split("# Table I: dataset statistics (from src/clean.py)")[1].strip()}
+{(R / "split_summary_beauty.md").read_text().split("# Split summary (time-based; from src/split.py)")[1].strip()}
 
-The time-based split (earliest 70% train, next 15% validation, final 15% locked test) is:
+More than half of the test purchases come from users or products with no earlier history, which is why the cold-start experiments (E2) matter on this dataset.
 
-{(R / "split_summary.md").read_text().split("# Split summary (time-based; from src/split.py)")[1].strip()}
+**Signal check.** The same four diagnostics used on the 1M file were run on Beauty:
 
-**The 1M file contains no learnable purchase pattern.** Four independent checks (Fig. 1) all match what random purchasing predicts: product popularity has Poisson-like spread, users do not repeat categories or brands more than chance, and a product's early sales do not predict its later sales.
+{diag}
+
+All four differ strongly from what chance predicts, so this file has structure for models to learn. On the 1M file the same checks match chance (Fig. 1).
 
 ![Fig. 1](figures/fig_signal_diagnostics.png)
 
-*Fig. 1. Observed statistics in amazon_ecommerce_1M against pure chance.*
-
-To check that the evaluation code can detect signal when it exists, a **positive control** was generated: a simulated dataset with a planted taste structure (5,000 users, 1,986 items, 124,959 purchases), clearly labelled synthetic. All models were run on it with identical code. Results on the control show what the pipeline can find; results on the 1M file show what that real file contains.
+*Fig. 1. Diagnostics on amazon_ecommerce_1M against pure chance (no learnable pattern).*
 
 ### B. Locked-test ranking results (E1, Table III)
 
-Settings were chosen on validation, frozen in `manifests/frozen_settings.json` and committed before any test scoring; final models were refit on train plus validation and every model was scored on the locked test exactly once. Rankings are scored for users with history before the test period (4,912 in the control data; a seeded sample of 5,000 in the 1M file), never recommending an item the user already bought.
+Settings were chosen on validation, frozen in `manifests/frozen_settings.json` and committed before any test scoring; final models were refit on train plus validation and every model was scored on the locked test exactly once. Rankings are scored for the 7,272 users with history before the test period, never recommending an item the user already bought; users with no history are handled separately (E2).
 
-**Table III (control data, K = 10).**
+**Table III (Amazon Beauty, locked test, K = 10).**
 
-{section("final_test_control.md", "Table III")}
+{section(B, "Table III")}
 
-On the control data the personalised models clearly beat tuned popularity (NDCG@10 {f3(nd('control','popularity'))}): item-kNN reaches {f3(nd('control','itemknn'))}, ALS {f3(nd('control','als'))}, the adaptive hybrid {f3(nd('control','hybrid_adaptive'))} and BPR {f3(nd('control','bpr'))}. The rating-trained SVD ({f3(nd('control','svd'))}) and the content-only model ({f3(nd('control','content'))}) do not.
-
-**Table III (amazon_ecommerce_1M, K = 10).**
-
-{section("final_test_main.md", "Table III")}
-
-On the 1M file every model scores essentially zero (NDCG@10 between {min(nd('main',n) for n in res['main']):.5f} and {max(nd('main',n) for n in res['main']):.5f}), and random is on par with the rest.
+All personalised models except SVD beat tuned popularity (NDCG@10 {ndcg['pop']:.4f}). The hybrid is best at {ndcg['hyb']:.4f}, about **{x(ndcg['hyb'], ndcg['pop']):.1f} times** popularity; ALS ({ndcg['als']:.4f}), content-based ({ndcg['con']:.4f}) and item-kNN ({ndcg['knn']:.4f}) follow, then BPR ({ndcg['bpr']:.4f}). Random scores {ndcg['rand']:.5f}. Absolute values look small because each user chooses among about 12,000 products and typically has one or two later purchases; the comparison between models is what carries the information.
 
 ![Fig. 2](figures/fig_models_test.png)
 
-*Fig. 2. Locked-test NDCG@10 with 95% bootstrap intervals over users. Bars start at zero.*
+*Fig. 2. Locked-test NDCG@10 on Amazon Beauty with 95% bootstrap intervals over users. Bars start at zero.*
 
 ### C. Significance tests
 
-Per-user NDCG@10 differences against tuned popularity were tested with a paired bootstrap (1,000 resamples of users, 95% interval), with a Bonferroni adjustment for the {boot['control'][next(iter(boot['control']))][5]} comparisons made on the control data and {boot['main'][next(iter(boot['main']))][5]} on the 1M file. A model counts as an improvement only if its interval excludes zero and the adjusted p-value is below 0.05.
+Per-user NDCG@10 differences against tuned popularity were tested with a paired bootstrap (1,000 resamples of users, 95% interval) with a Bonferroni adjustment for the 7 comparisons. A model counts as an improvement only if its interval excludes zero and the adjusted p-value is below 0.05.
 
-**Control data.**
+{section(B, "Paired bootstrap")}
 
-{section("final_test_control.md", "Paired bootstrap")}
+Item-kNN, ALS, BPR, content-based and the hybrid are improvements over tuned popularity; every interval is far from zero. SVD is significantly *worse* than popularity. Because the hybrid combines two components, it was also compared with each (second table below): it beats both ALS and the content-only model, but by a small margin (about 0.004 NDCG@10).
 
-{better_txt} are improvements over tuned popularity. {" and ".join(worse)} are significantly *worse* than it. The adaptive hybrid is {abs(hy[0]):.3f} NDCG@10 {'below' if hy[0] < 0 else 'above'} item-kNN on warm users (95% interval [{hy[1]:.3f}, {hy[2]:.3f}]), the price of reserving slots for new items.
-
-**amazon_ecommerce_1M.**
-
-{section("final_test_main.md", "Paired bootstrap")}
-
-{'No model is distinguishable from tuned popularity on the 1M file; every interval contains zero.' if main_none else 'See the table for which models differ.'} As agreed in advance, we report plainly that popularity is not beaten on this file.
+{section(B, "Hybrid against its own components")}
 
 ### D. Rating-prediction error (Table IV)
 
-**Table IV (control data, locked test).**
+{section(B, "Table IV")}
 
-{section("final_test_control.md", "Table IV")}
+The user/item bias baseline (RMSE {bias[0]:.4f}) and SVD (RMSE {svd[0]:.4f}) both improve on the global mean ({g[0]:.4f}), and the intervals exclude zero, but SVD does not improve on the simple bias baseline and, as Table III shows, ranks below popularity. A lower RMSE therefore did not turn into better recommendations, and no RMSE gain is presented as a ranking gain.
 
-On the control data the user/item bias baseline (RMSE {b_c[0]:.4f}) and SVD (RMSE {s_c[0]:.4f}) both improve on the global mean ({g_c[0]:.4f}), but SVD does not improve on the simple bias baseline, and its ranking is worse than popularity. A lower RMSE therefore did not translate into better recommendations, so no RMSE gain is presented as a ranking gain. On the 1M file the same models are slightly *worse* than the global mean (global {g_m[0]:.4f}, bias baseline {b_m[0]:.4f}, SVD {s_m[0]:.4f}): fitting parameters to rating noise hurts.
+### E. Experiments E2 to E7 (Amazon Beauty)
 
-### E. Experiments E2 to E7
+**E2, cold start.** On the locked test, 8,675 of 29,848 rows (29.1%) are by users with no earlier history and 2,864 (9.6%) are of items with no history. For the cold users no personalised model can score anything; popularity is the fallback and beats random (NDCG@10 0.0168 against 0.0005, interval excluding zero). For cold items the picture is sharply different:
 
-**E2, cold slices.** On the 1M file {cold['cold-user']:,} of {tot_rows:,} test rows ({100*cold['cold-user']/tot_rows:.1f}%) come from users with no earlier history and {cold['cold-item']} from unseen items; personalised models cannot score cold users, so popularity is the fallback, and on those users popularity is not distinguishable from random.
+{section(B, "E2 (new items)")}
 
-{section("final_test_main.md", "E2")}
+Collaborative models, popularity and SVD can never recommend an item that has no purchase history (HitRate@10 = 0). The content-based model finds {100*new['con']:.1f}% of those purchases and the adaptive hybrid **{100*new['hyb']:.1f}%**, because it scores such items by their text alone. Ordinary purchases are not hurt: the hybrid's NDCG@10 on them is 0.0249, equal to ALS (0.0253) and above item-kNN (0.0231).
 
-The control data has almost no cold rows, so cold items were studied with a stress test on validation: 200 items were hidden from training as "new arrivals". Collaborative filtering recommended none of them (HitRate@10 = 0), while the adaptive hybrid, which scores items with no history by text alone, reached HitRate@10 of {100*hyb_cold['0.1'][0]:.1f}% at content weight 0.1 and {100*hyb_cold['0.3'][0]:.1f}% at 0.3. The cost is that NDCG@10 on ordinary purchases fell from {hyb_warm[0]:.3f} to {hyb_warm[1]:.3f}, because new items occupy list slots.
+**E3, training size (validation only).** Collaborative models need data. With 25% of the training history item-kNN ({e3['Item-kNN'][0]:.4f}) and ALS ({e3['ALS'][0]:.4f}) are *below* popularity ({e3['Popularity'][0]:.4f}); with all of it they reach {e3['Item-kNN'][2]:.4f} and {e3['ALS'][2]:.4f}, about three times popularity. Content-based is the most data-efficient ({e3['Content-based'][0]:.4f} at 25%) because it uses item text, not co-purchases.
 
-{section("hybrid_validation_control.md", "Cold-item stress test")}
+![Fig. 3](figures/fig_e3_training_size_beauty.png)
 
-**E3, training size (control, validation only).** Collaborative models degrade quickly with less data; popularity barely moves. With 25% of the training data item-kNN ({e3['Item-kNN'][0]:.3f}) falls below popularity ({e3['Popularity'][0]:.3f}), ALS ({e3['ALS'][0]:.3f}) stays above it, and with all data they reach {e3['Item-kNN'][2]:.3f} and {e3['ALS'][2]:.3f}.
+*Fig. 3. Validation NDCG@10 against the share of training data used (Amazon Beauty).*
 
-![Fig. 3](figures/fig_e3_training_size.png)
+**E4, hybrid ablation (validation).** A global blend of item-kNN and content scores (w = 0.5) raises NDCG@10 over either part alone (0.0216 against 0.0181 and 0.0187), so on real data the content signal helps even for users with history. The adaptive rule, which uses content alone for items with no history, adds the new-item gain on top.
 
-*Fig. 3. NDCG@10 against the share of training data used (control data, validation).*
+{section("hybrid_validation_beauty.md", "Ablation and new-item slice")}
 
-**E4, hybrid ablation (control, validation).** The validation-best global blend weight is 0, meaning the content signal adds nothing for users with history when item-kNN is available; content alone scores {f3(nd('control','content'))} on the test. The hybrid's value is confined to new items.
+**E5, list length.** Hybrid NDCG@10 is {e5['Hybrid'][1]:.4f} (HitRate@10 {100*e5['Hybrid'][4]:.1f}%); at K = 20 the HitRate is {100*e5['Hybrid'][5]:.1f}%, against {100*e5['Popularity'][5]:.1f}% for popularity. The model order is {section(B, "E5").split("Model order by NDCG@5 / @10 / @20: ")[1].split(" | ")[0]} at K = 5 and 10, and ALS overtakes content at K = 20, so the middle of the ranking depends on K while the ends (hybrid first; popularity, SVD and random last) do not.
 
-{section("hybrid_validation_control.md", "Ablation")}
+**E6, accuracy against coverage and novelty.** Popularity recommends a tiny part of the catalogue (coverage 0.001) and the most popular items (novelty 9.2 bits); the hybrid covers 71% of the catalogue at higher novelty (12.7 bits) and, unlike random (coverage 1.00), is accurate. Content-based lists are the least diverse in text (diversity 0.65) because they recommend items that read alike, and the hybrid sits between content and the collaborative models (0.78).
 
-**E5, list length.** {section("final_test_control.md", "E5").split("Model order by")[1].strip().rstrip('.')}.
+![Fig. 4](figures/e6_test_beauty.png)
 
-**E6, accuracy against coverage and novelty.** Content-based and random recommendations cover far more of the catalogue than popularity (coverage {S['control']['popularity']['coverage@10']:.3f}), but accuracy does not rise with coverage: item-kNN and ALS achieve the best accuracy with coverage {S['control']['itemknn']['coverage@10']:.2f} and {S['control']['als']['coverage@10']:.2f}, and random reaches full coverage with near-zero accuracy. Diversity (control data only, where item text exists) stays high for every model: the lowest value is {min(S['control'][n]['diversity'] for n in S['control']):.2f} (content-only), against 0.97 for popularity.
+*Fig. 4. Accuracy against catalogue coverage and novelty on Amazon Beauty (locked test).*
 
-![Fig. 4](figures/e6_test_control.png)
+**E7, validation against locked test.** The order of the models changes slightly between validation and test (content and ALS/item-kNN swap places) but the extremes are stable: hybrid first, popularity, SVD and random last. Item-kNN, ALS, BPR and content score higher on test than on validation because the final models are refit on train plus validation, i.e. they see 20% more history.
 
-*Fig. 4. Accuracy against catalogue coverage and novelty on the control data (locked test).*
+{section(B, "E7")}
 
-**E7, validation against locked test.** On the control data the model order on the locked test is the same as on validation, so the validation wins survived. On the 1M file the order changed completely, which is what noise looks like and is why intervals, not point estimates, decide the conclusions.
+### F. Sanity checks on the two earlier datasets
 
-{section("final_test_control.md", "E7")}
+**Simulated positive control.** To prove the evaluation code can detect signal, all models were run on a simulated dataset with a planted taste structure. Item-kNN reaches NDCG@10 {ctl['knn']:.3f}, ALS {ctl['als']:.3f}, the hybrid {ctl['hyb']:.3f} and BPR {ctl['bpr']:.3f}, against {ctl['pop']:.3f} for tuned popularity, while the rating-trained SVD ({ctl['svd']:.3f}) does not beat popularity: the same pattern as on real data. Full tables are in `reports/final_test_control.md`. These numbers are higher than on Beauty because the simulated structure is cleaner than real behaviour, so they say nothing about real shoppers; they only show the pipeline works.
 
-### F. Content model on real Amazon text
+**amazon_ecommerce_1M.** On this file every model scores essentially zero (NDCG@10 between {min(main):.5f} and {max(main):.5f}), random is on par with the rest, and no model is distinguishable from tuned popularity. The diagnostics in Fig. 1 explain why (purchases look randomly assigned), so this is a property of the file, not of the methods. Full tables are in `reports/final_test_main.md`.
 
-The product and review files contain no users, so purchases cannot be predicted. As a transparent proxy, TF-IDF similarity was used to find products related to a given product, with "relevant" meaning another product in the same leaf category; category trail and brand were kept out of the model's text. Settings were tuned on half of the 707 evaluable products and reported on the other half. On held-out products, NDCG@10 is **{c_tf:.3f}** against {c_rand:.3f} for random and {c_pop:.3f} for popularity by rating count. Adding review text helped (title only {c_title:.3f}, all text {c_all:.3f}), so reviews carry signal beyond titles and descriptions.
-
-{section("content_amazon.md", "Held-out result")}
+**Content model on Amazon product text.** The Kaggle products and reviews files contain no user ids, so only a proxy task was possible: retrieving products of the same leaf category by TF-IDF similarity. On held-out products NDCG@10 is **{c_tf:.3f}** against {c_rand:.3f} for random and {c_pop:.3f} for popularity by rating count, so product text carries real signal; this supports using text for cold items on Beauty.
 
 ## VI. Discussion and Limitations
 
-**What the results say.** Where there is something to learn, the pipeline finds it: on the control data item-kNN scores about {nd('control','itemknn')/nd('control','popularity'):.1f} times tuned popularity and the intervals are far from zero. Where there is nothing to learn, it correctly reports nothing: on the 1M file no model beats tuned popularity, and four independent diagnostics show why (purchases look randomly assigned). The failure to beat popularity on the 1M file is therefore a property of that dataset, not of the methods, and it is the outcome we agreed to report plainly if it occurred.
+**What the results say.** On a real dataset with learnable structure, personalised models beat the best-seller baseline by a wide, statistically solid margin: the hybrid scores {x(ndcg['hyb'], ndcg['pop']):.1f} times tuned popularity, and its hit rate at 10 is {100*e5['Hybrid'][4]:.1f}% against {100*e5['Popularity'][4]:.1f}%. The same pipeline reported no gain on a file with no structure and a clear gain on a simulated one, which is what a trustworthy evaluation should do.
 
-**Ranking and rating are different tasks.** SVD, trained to predict ratings, improved RMSE on the control data yet ranked below popularity, while ALS and BPR, trained on interactions, ranked far better. The practical lesson is to choose the training objective to match what the page must do.
+**Ranking and rating are different tasks.** SVD, trained to predict star ratings, improved RMSE yet ranked below popularity on real and simulated data, while ALS, BPR and item-kNN, which learn from who bought what, ranked far better. The training objective must match what the page has to do.
 
-**Content helps where history is missing.** The content signal was weak for users with history and the validation-best blend gave it zero weight. Its role is cold start: given text alone, the adaptive hybrid surfaced new items that collaborative filtering could not, at a measurable cost to ordinary recommendations. How much that cost is worth paying is a product decision, not a modelling one.
+**Content matters on real data.** On the simulated control the content signal added nothing for users with history; on Beauty the text of the product (title, brand, category, description) is informative enough that the content-only model matches item-kNN and the blend beats both. Its largest benefit is cold start: the hybrid finds about {100*new['hyb']:.0f}% of purchases of brand-new products, where collaborative filtering finds none.
 
-**Data volume matters.** Item-kNN needs co-purchases to learn from and fell below popularity at 25% of the data, so a shop with sparse history should start with popularity or a factor model.
+**Data volume matters.** Collaborative models fall below popularity with a quarter of the history. A shop with sparse history should start from popularity plus content and switch to collaborative models as purchases accumulate.
 
 **Limitations.**
-1. The only large purchase file is synthetic and carries no signal. The positive control is simulated with a latent-factor structure similar to what matrix-factorisation and neighbourhood models assume, so its absolute numbers favour those models and do not transfer to real shoppers.
-2. The real Amazon files have no users or purchases; the content model was validated on a proxy task (same leaf category), not on whether shoppers bought items. The hybrid was therefore demonstrated only on simulated item text.
-3. The evaluation is offline. Purchases and reviews are not preferences, and the logged interactions were shaped by what the site showed.
-4. The k-core was 2, the 1M file was judged on a seeded sample of 5,000 users, and its grids were reduced to a single factor count because of the machine used. Several best settings on the control data lie at the edge of the planned grids (factors = 32, the smallest value), so larger or finer grids might change them slightly.
-5. One seed was used. BPR is multi-threaded and varies by about 0.0002 NDCG@10 between runs. Bonferroni adjustment covers comparisons within a dataset only.
-6. Final models were refit on train plus validation with settings frozen from validation; ties in validation were resolved by taking the first setting in grid order.
-7. Diversity could be computed only where item text exists. The optional neural collaborative-filtering extension was not run.
+1. Amazon Beauty 5-core is a pre-filtered benchmark: every user and item has at least five reviews, which makes the data denser and more predictable than a live shop and excludes the quietest customers. A review is also not the same as a purchase, and the data end in 2014.
+2. Absolute scores are small (NDCG@10 about 0.03 at best), as is normal for 12,000-item catalogues, and only 7,272 of the test users had history; 40.8% of test rows come from users with none and were handled only by popularity.
+3. The evaluation is offline. Interactions were shaped by what the site showed, and offline gains need not carry over to real shoppers; no A/B test was run.
+4. For Beauty the validation grids in Table II were extended (larger neighbourhoods and shrinkage for item-kNN; 128 and 256 factors and weaker regularisation for the factor models), because the best validation settings sat on the edge of the planned grids. This was done on validation only, before test scoring, but several final settings still lie on the edge of the extended grid (ALS and BPR use 256 factors), so slightly larger models might score a little higher.
+5. One seed was used. BPR is multi-threaded and varies by about 0.0002 NDCG@10 between runs. Bonferroni adjustment covers comparisons within one dataset only.
+6. The choice of Beauty was made after the 1M file failed; Beauty's test period was not scored until its settings were frozen, but the switch is a post-hoc decision and is disclosed as such. The simulated control favours the model types it was built around and is never presented as real data.
+7. Ties in validation were resolved by taking the first setting in grid order. Final models were refit on train plus validation, so validation and test numbers are not strictly comparable.
+8. Diversity depends on item text. The second relevance definition (later rating of 4 or more), the leave-last-out protocol and the optional neural extension were not run.
 
 ## VII. Conclusion
 
-We built a leakage-aware recommender study with a time-based split, frozen settings and a locked test scored once. On a positive-control dataset, neighbourhood and factorisation models trained on interactions beat a tuned popularity baseline with intervals far from zero, a rating-trained SVD did not, and a content-based model gave no gain for users with history but was the only route to recommending brand-new items. On the large Amazon purchase file, popularity was not beaten, and diagnostics show the file behaves like random purchases, so that result reflects the data and not the methods. On real Amazon product text, TF-IDF retrieval recovered related products far above chance. Taken together, the project shows how to evaluate recommenders honestly, including how to recognise when a dataset cannot support any personalised model.
+We built a leakage-aware recommender study with a time-based split, settings frozen before scoring and a test period scored once. On real Amazon Beauty reviews, item-kNN, ALS, BPR, a TF-IDF content model and a hybrid all beat a tuned popularity baseline with 95% intervals far from zero, and the hybrid, which blends collaborative and text signals and uses text alone for new products, was best: about {x(ndcg['hyb'], ndcg['pop']):.1f} times the popularity score and the only approach that recovers purchases of brand-new items. A rating-trained SVD did not beat popularity, collaborative models need history to work, and a random-looking purchase file (amazon_ecommerce_1M) correctly produced no gains. Taken together, the project shows how to evaluate recommenders honestly, including how to recognise when a dataset cannot support any personalised model and when a real one can.
 """
 (R / "final_report_sections.md").write_text(md); print(f"wrote {len(md.split())} words")

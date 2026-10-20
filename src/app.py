@@ -57,7 +57,7 @@ div:has(> [role="tablist"]) {{ border-bottom:none !important; box-shadow:none !i
 def load():
     cfg = json.loads((MANIFEST_DIR / "frozen_settings.json").read_text())["beauty"]
     rd = lambda n: pd.read_csv(PROCESSED_DIR / f"beauty_{n}.csv.gz", parse_dates=["purchase_date"])
-    train, val = rd("train"), rd("val"); items = pd.read_csv(PROCESSED_DIR / "beauty_items.csv.gz").fillna({"title": "", "brand": "", "image": "", "text": ""})
+    train, val = rd("train"), rd("val"); items = pd.read_csv(PROCESSED_DIR / "beauty_items.csv.gz").fillna({"title": "", "brand": "", "image": "", "text": ""}); items["title"] = items.title.map(html.unescape); items["brand"] = items.brand.map(html.unescape)
     n_users, n_items = int(max(train.u.max(), val.u.max())) + 1, len(items)
     R = M.interaction_matrix(train, n_users, n_items); tb = M.tie_break(train, n_items); is_cold = np.bincount(train.i.values, minlength=n_items) == 0
     p = cfg["itemknn"]; S = M.prune_top_k(M.knn_similarity(R, p["shrink"]), p["k"]); cf = M.knn_score_fn(R, S, 0.0)

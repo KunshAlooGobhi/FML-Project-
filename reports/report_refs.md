@@ -23,3 +23,4 @@
 [11] J. L. Herlocker, J. A. Konstan, L. G. Terveen, and J. T. Riedl, "Evaluating collaborative filtering recommender systems," ACM Trans. Information Systems, vol. 22, no. 1, pp. 5-53, 2004.
 
 [12] Kaggle, "Amazon E-commerce" (sharmajicoder) and "Amazon E-commerce Products & Reviews Dataset" (lazylad99), public datasets, accessed October 2026.
+[13] J. McAuley, C. Targett, Q. Shi and A. van den Hengel, "Image-based recommendations on styles and substitutes," in Proc. SIGIR, 2015, pp. 43-52 (Amazon product data, Beauty 5-core and metadata).
