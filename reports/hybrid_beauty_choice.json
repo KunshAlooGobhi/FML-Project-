@@ -1,0 +1,13 @@
+{
+ "max_features": 20000,
+ "ngram": [
+  1,
+  2
+ ],
+ "w_validation_best": 0.5,
+ "adaptive_w": 0.5,
+ "cf": {
+  "k": 200,
+  "shrink": 100
+ }
+}

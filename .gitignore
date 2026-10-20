@@ -10,3 +10,4 @@ __pycache__/
 
 # per-model result pickles (binary working files; the .md reports are the record)
 reports/final_*_*/
+reports/*.pkl

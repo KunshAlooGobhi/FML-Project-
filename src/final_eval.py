@@ -1,5 +1,5 @@
 """Phase 5: frozen settings -> final fit -> score. One model per call; each result is saved.
-  python final_eval.py <control|main> <val|test> <step> [step ...]
+  python final_eval.py <control|main|beauty> <val|test> <step> [step ...]
 steps: random popularity itemknn svd als bpr content hybrid_adaptive cold finalize
 split 'val' = DRY RUN (fit on train, score validation; also feeds E7). split 'test' = LOCKED TEST (fit on train+validation;
 refuses to overwrite any saved model result, so every model is scored on the test exactly once)."""
@@ -9,6 +9,7 @@ from config import PROCESSED_DIR, ROOT, SEED, MANIFEST_DIR
 from evaluate import user_sets, warm_eval_users, evaluate_batch
 import models as M
 from baselines import build_rankings
+from metrics import hit_rate_at_k, ndcg_at_k
 from hybrid import tfidf, content_score_fn, adaptive_blend_fn
 
 FROZEN = json.loads((MANIFEST_DIR / "frozen_settings.json").read_text())
@@ -19,7 +20,7 @@ def out_dir(dataset, split):
 class Ctx:
     def __init__(self, dataset, split):
         self.dataset, self.split, self.cfg = dataset, split, FROZEN[dataset]
-        prefix = "control_" if dataset == "control" else ""
+        prefix = {"control": "control_", "main": "", "beauty": "beauty_"}[dataset]
         rd = lambda n: pd.read_csv(PROCESSED_DIR / f"{prefix}{n}.csv.gz", parse_dates=["purchase_date"])
         train, val, test = rd("train"), rd("val"), rd("test")
         self.fit, self.ev = (train, val) if split == "val" else (pd.concat([train, val], ignore_index=True), test)
@@ -31,7 +32,9 @@ class Ctx:
         counts = np.bincount(self.fit.i.values, minlength=self.n_items)
         self.is_cold = counts == 0
         self.pop_share = (counts + 1) / (len(self.fit) + self.n_items)      # for novelty
-        self.texts = pd.read_csv(PROCESSED_DIR / "control_items.csv.gz").text.values if dataset == "control" else None
+        self.texts = (pd.read_csv(PROCESSED_DIR / "control_items.csv.gz").text.values if dataset == "control" else
+                      pd.read_csv(PROCESSED_DIR / "beauty_items.csv.gz").text.fillna("").values if dataset == "beauty" else None)
+        self.tok = r"(?u)\b[a-z][a-z]+\b" if dataset == "beauty" else r"\S+"
 
 def score_fn_for(name, c):
     cfg = c.cfg; extra = {}
@@ -51,7 +54,7 @@ def score_fn_for(name, c):
     elif name == "bpr":
         p = cfg["bpr"]; fn = M.factor_score_fn(M.fit_bpr(c.R, p["factors"], p["reg"], p["lr"]), c.tb)
     elif name in ("content", "hybrid_adaptive"):
-        p = cfg["content"]; X = tfidf(c.fit, c.texts, c.n_items, p["max_features"], tuple(p["ngram"])); ct = content_score_fn(c.R, X)
+        p = cfg["content"]; X = tfidf(c.fit, c.texts, c.n_items, p["max_features"], tuple(p["ngram"]), c.tok); ct = content_score_fn(c.R, X)
         if name == "content":
             fn = lambda ub: ct(ub) + c.tb
         else:
@@ -63,7 +66,7 @@ def diversity_novelty(recs, c, sample=1000):
     nov = np.mean([np.mean(-np.log2(c.pop_share[r[:10]])) for r in recs.values()])
     div = np.nan
     if c.texts is not None:
-        p = c.cfg["content"]; X = tfidf(c.fit, c.texts, c.n_items, p["max_features"], tuple(p["ngram"]))
+        p = c.cfg["content"]; X = tfidf(c.fit, c.texts, c.n_items, p["max_features"], tuple(p["ngram"]), c.tok)
         us = list(recs)[:sample]; vals = []
         for u in us:
             V = X[recs[u][:10]].toarray(); S = V @ V.T; k = len(V)
@@ -89,7 +92,13 @@ def run_step(dataset, split, name):
         fn, extra = score_fn_for(name, c)
         pu, s, recs = evaluate_batch(fn, c.R, c.rel, c.users, c.n_items, return_recs=True)
         nov, div = diversity_novelty(recs, c); s["novelty"], s["diversity"] = nov, div
-        res = {"per_user": pu, "summary": s, **extra}
+        sl = []                                   # E2 slice from the SAME scoring pass: purchases of NEW items (no history in the fit data) vs ordinary purchases
+        for u, rc in recs.items():
+            r = c.rel[u]; rn = {i for i in r if c.is_cold[i]}; ro = r - rn; row = {"u": u}
+            if rn: row.update({"new_HR@10": hit_rate_at_k(rc, rn, 10), "new_NDCG@10": ndcg_at_k(rc, rn, 10)})
+            if ro: row.update({"old_NDCG@10": ndcg_at_k(rc, ro, 10)})
+            sl.append(row)
+        res = {"per_user": pu, "summary": s, "slices": pd.DataFrame(sl), **extra}
     pickle.dump(res, open(f, "wb"))
     print(f"[{dataset}/{split}] {name}: saved. " + (f"NDCG@10={res['summary']['NDCG@10']:.5f} HR@10={res['summary']['HR@10']:.4f} users={res['summary']['users']}" if "summary" in res and name != "cold" else ""))
 

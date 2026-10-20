@@ -34,8 +34,8 @@ def adaptive_blend_fn(cf_fn, ct_fn, w, is_cold, tb):
         return (1 - wi) * a + wi * b + tb
     return fn
 
-def tfidf(train, texts, n_items, max_f, ngram):
-    v = TfidfVectorizer(max_features=max_f, ngram_range=ngram, sublinear_tf=True, token_pattern=r"\S+")
+def tfidf(train, texts, n_items, max_f, ngram, token_pattern=r"\S+"):
+    v = TfidfVectorizer(max_features=max_f, ngram_range=ngram, sublinear_tf=True, token_pattern=token_pattern, stop_words=None if token_pattern == r"\S+" else "english")
     v.fit(texts[np.unique(train.i.values)])                       # vocabulary fitted on items seen in TRAIN only
     return v.transform(texts[:n_items])                            # any item (even unseen) can be encoded from its text
 

@@ -6,6 +6,11 @@ from config import PROCESSED_DIR, ROOT, MANIFEST_DIR
 def first_best(df):
     return df[df["NDCG@10"] == df["NDCG@10"].max()].iloc[0]
 
+def read_grid(R, tag, model):
+    """Base Table II grid plus (if present) the extended validation grid; ties -> first in order (base grid first)."""
+    d = pd.read_csv(R / f"models_{tag}_{model}.csv"); fe = R / f"models_{tag}_{model}_ext.csv"
+    return pd.concat([d, pd.read_csv(fe)], ignore_index=True) if fe.exists() else d
+
 def clean(row, keys, ints=()):
     return {k: (int(row[k]) if k in ints else float(row[k])) for k in keys}
 
@@ -24,20 +29,25 @@ def bias_lambda(prefix):
 
 def main():
     out = {"_note": "Frozen from validation results only. Ties -> first setting in grid order. Final models are refit on train+validation.",
-           "_sources": "reports/models_*_*.csv, reports/hybrid_validation_control.md"}
-    for tag, prefix, max_users in (("control", "control_", None), ("main", "", 5000)):
+           "_sources": "reports/models_*_*.csv, reports/hybrid_validation_control.md, reports/hybrid_beauty_choice.json"}
+    for tag, prefix, max_users in (("control", "control_", None), ("main", "", 5000), ("beauty", "beauty_", None)):
         R = ROOT / "reports"; d = {"eval_users_max": max_users}
-        pop = pd.read_csv(R / f"models_{tag}_pop.csv"); pop = pop[pop.model != "random"]
+        pop = read_grid(R, tag, "pop"); pop = pop[pop.model != "random"]
         d["popularity"] = {"variant": first_best(pop).model.split(":")[1]}
-        d["itemknn"] = clean(first_best(pd.read_csv(R / f"models_{tag}_knn.csv")), ["k", "shrink"], ints=("k", "shrink"))
-        d["svd"] = clean(first_best(pd.read_csv(R / f"models_{tag}_svd.csv")), ["factors", "reg", "lr"], ints=("factors",))
-        d["als"] = clean(first_best(pd.read_csv(R / f"models_{tag}_als.csv")), ["factors", "reg", "alpha"], ints=("factors",))
-        d["bpr"] = clean(first_best(pd.read_csv(R / f"models_{tag}_bpr.csv")), ["factors", "reg", "lr"], ints=("factors",))
+        d["itemknn"] = clean(first_best(read_grid(R, tag, "knn")), ["k", "shrink"], ints=("k", "shrink"))
+        d["svd"] = clean(first_best(read_grid(R, tag, "svd")), ["factors", "reg", "lr"], ints=("factors",))
+        d["als"] = clean(first_best(read_grid(R, tag, "als")), ["factors", "reg", "alpha"], ints=("factors",))
+        d["bpr"] = clean(first_best(read_grid(R, tag, "bpr")), ["factors", "reg", "lr"], ints=("factors",))
         d["bias_baseline"] = bias_lambda(prefix)
         if tag == "control":   # from reports/hybrid_validation_control.md
             d["content"] = {"max_features": 5000, "ngram": [1, 2]}
             d["hybrid"] = {"w_validation_best": 0.0, "adaptive_w": 0.1,
                            "note": "validation-best global weight is 0 (= item-kNN); the adaptive variant (content-only for items with no history, w=0.1) is the declared cold-start design"}
+        if tag == "beauty":    # from reports/hybrid_beauty_choice.json (validation only)
+            h = json.loads((R / "hybrid_beauty_choice.json").read_text())
+            d["content"] = {"max_features": h["max_features"], "ngram": h["ngram"]}
+            d["hybrid"] = {"w_validation_best": h["w_validation_best"], "adaptive_w": h["adaptive_w"],
+                           "note": "adaptive hybrid: content-only for items with no training history; weight for all other items chosen on validation NDCG@10"}
         out[tag] = d
     MANIFEST_DIR.mkdir(exist_ok=True)
     (MANIFEST_DIR / "frozen_settings.json").write_text(json.dumps(out, indent=2))

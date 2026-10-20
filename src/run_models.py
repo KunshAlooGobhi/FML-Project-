@@ -19,6 +19,11 @@ GRIDS = {
                   als=dict(factors=[32], reg=[0.01, 0.1], alpha=[10, 40]),
                   bpr=dict(factors=[32], reg=[0.01, 0.1], lr=[0.01, 0.05])),
 }
+# extended grid (added after seeing that several best Table II settings sat on the grid edge); VALIDATION only, documented as a deviation
+GRIDS["ext"] = dict(knn=dict(k=[100, 200], shrink=[100, 200, 500]),
+                    svd=dict(factors=[128, 256], reg=[0.02, 0.05], lr=[0.005]),
+                    als=dict(factors=[128, 256], reg=[0.01, 0.001], alpha=[40, 100]),
+                    bpr=dict(factors=[128, 256], reg=[0.01, 0.001], lr=[0.05, 0.1]))
 KEYS = ["P@10", "R@10", "HR@10", "MAP@10", "NDCG@5", "NDCG@10", "NDCG@20", "coverage@10", "users"]
 
 def combos(g):
@@ -63,14 +68,15 @@ def main(prefix, model, max_users=None, grid="full"):
             m = M.fit_als(R, cfg["factors"], cfg["reg"], cfg["alpha"]) if model == "als" else M.fit_bpr(R, cfg["factors"], cfg["reg"], cfg["lr"])
             score(model, cfg, M.factor_score_fn(m, tb))
     if rows:
-        pd.DataFrame(rows).to_csv(out / f"models_{tag}_{model}.csv", index=False)
+        pd.DataFrame(rows).to_csv(out / f"models_{tag}_{model}{'_ext' if grid == 'ext' else ''}.csv", index=False)
 
 def summary(prefix):
     tag = prefix.strip("_") or "main"; out = ROOT / "reports"; best = []
     for model in ("pop", "knn", "svd", "als", "bpr"):
         f = out / f"models_{tag}_{model}.csv"
         if not f.exists(): continue
-        d = pd.read_csv(f)
+        d = pd.read_csv(f); fe = out / f"models_{tag}_{model}_ext.csv"
+        if fe.exists(): d = pd.concat([d, pd.read_csv(fe)], ignore_index=True)
         if model == "pop":
             best += [d[d.model == "random"].iloc[0], d[d.model != "random"].sort_values("NDCG@10").iloc[-1]]
         else:

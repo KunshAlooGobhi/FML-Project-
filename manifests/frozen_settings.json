@@ -1,6 +1,6 @@
 {
   "_note": "Frozen from validation results only. Ties -> first setting in grid order. Final models are refit on train+validation.",
-  "_sources": "reports/models_*_*.csv, reports/hybrid_validation_control.md",
+  "_sources": "reports/models_*_*.csv, reports/hybrid_validation_control.md, reports/hybrid_beauty_choice.json",
   "control": {
     "eval_users_max": null,
     "popularity": {
@@ -69,6 +69,47 @@
     "bias_baseline": {
       "lambda": 50,
       "validation_rmse": 0.51927
+    }
+  },
+  "beauty": {
+    "eval_users_max": null,
+    "popularity": {
+      "variant": "popularity_all"
+    },
+    "itemknn": {
+      "k": 200,
+      "shrink": 100
+    },
+    "svd": {
+      "factors": 128,
+      "reg": 0.02,
+      "lr": 0.005
+    },
+    "als": {
+      "factors": 256,
+      "reg": 0.001,
+      "alpha": 40.0
+    },
+    "bpr": {
+      "factors": 256,
+      "reg": 0.01,
+      "lr": 0.1
+    },
+    "bias_baseline": {
+      "lambda": 10,
+      "validation_rmse": 1.14829
+    },
+    "content": {
+      "max_features": 20000,
+      "ngram": [
+        1,
+        2
+      ]
+    },
+    "hybrid": {
+      "w_validation_best": 0.5,
+      "adaptive_w": 0.5,
+      "note": "adaptive hybrid: content-only for items with no training history; weight for all other items chosen on validation NDCG@10"
     }
   }
 }
