@@ -27,9 +27,14 @@ h1,h2,h3 {{ letter-spacing:-0.01em; }}
 .hero {{ background:{INK}; color:#fff; border-radius:16px; padding:26px 30px; margin-bottom:18px; }}
 .hero h1 {{ color:#fff; font-size:1.9rem; margin:0 0 6px 0; font-weight:700; }}
 .hero p {{ color:#c9d3de; margin:0; font-size:1.02rem; line-height:1.5; max-width:760px; }}
-.stTabs [data-baseweb="tab-list"] {{ gap:6px; border-bottom:1px solid {LINE}; }}
-.stTabs [data-baseweb="tab"] {{ font-weight:600; font-size:1rem; padding:10px 18px; color:{MUTED}; }}
-.stTabs [aria-selected="true"] {{ color:{INK}; }}
+div:has(> [role="tablist"]) {{ border-bottom:none !important; box-shadow:none !important; }}
+[role="tablist"] {{ gap:12px !important; padding:4px 0 12px 0 !important; border:none !important; }}
+[data-testid="stTab"] {{ height:auto !important; padding:12px 28px !important; background:#fff !important; border:1.5px solid {LINE} !important; border-radius:999px !important; margin:0 !important; }}
+[data-testid="stTab"] p {{ font-size:1.12rem !important; font-weight:600 !important; color:{INK} !important; }}
+[data-testid="stTab"]:hover {{ border-color:{INK} !important; }}
+[data-testid="stTab"][aria-selected="true"] {{ background:{INK} !important; border-color:{INK} !important; }}
+[data-testid="stTab"][aria-selected="true"] p {{ color:#fff !important; }}
+.react-aria-SelectionIndicator, [data-baseweb="tab-highlight"], [data-baseweb="tab-border"] {{ display:none !important; }}
 .note {{ background:#fff; border:1px solid {LINE}; border-left:4px solid {BLUE}; border-radius:8px; padding:12px 16px; color:{MUTED}; font-size:.95rem; line-height:1.5; margin:6px 0 14px 0; }}
 .verdict {{ background:#fff; border:1px solid {LINE}; border-radius:14px; padding:18px 22px; margin:14px 0; font-size:1.15rem; line-height:1.5; }}
 .verdict b.good {{ color:{GREEN}; }} .verdict b.blue {{ color:{BLUE}; }} .verdict b.amber {{ color:{AMBER}; }}
@@ -121,10 +126,11 @@ with tab1:
     R, val, grp, score, pop, names, good = load_control()
     warm = np.flatnonzero(np.diff(R.indptr) > 0)
     if "u" not in st.session_state: st.session_state["u"] = int(good[0])
-    c1, c2, c3 = st.columns([1.6, 2, 3])
-    only_good = c3.checkbox("Only shoppers where our recommendations worked", value=True)
-    if c2.button("Show another shopper"):
-        st.session_state["u"] = int(np.random.default_rng().choice(good if only_good else warm)); st.rerun()
+    c1, c2, _ = st.columns([1.5, 2, 3], vertical_alignment="bottom")
+    if c2.button("Show another shopper", type="primary"):
+        good_set = set(good); rng = np.random.default_rng()   # mostly shoppers where the recommendations worked, sometimes one where they did not
+        pool_ = good if rng.random() < 0.75 else [x for x in warm if x not in good_set]
+        st.session_state["u"] = int(rng.choice(pool_)); st.rerun()
     u = int(c1.number_input("Shopper number", min_value=0, max_value=R.shape[0] - 1, step=1, key="u"))
     bought = R.indices[R.indptr[u]:R.indptr[u + 1]]
     if len(bought) == 0:
