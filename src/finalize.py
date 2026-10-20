@@ -107,6 +107,20 @@ def finalize(dataset, split):
                    md_table(pd.DataFrame([{"Model": "Random", "NDCG@10": b.mean(), "HR@10": cold['random']['summary']['HR@10']}, {"Model": "Popularity (tuned)", "NDCG@10": a.mean(), "HR@10": cold['popularity']['summary']['HR@10']}])),
                    f"\nPopularity minus random on cold users: {diff:.6f}, 95% CI [{lo:.6f}, {hi:.6f}], p = {p:.3f}.\n"]
         else: md += ["No cold users in this dataset/split.\n"]
+    if all("slices" in r for r in res.values()):
+        rows = []
+        for n, r in res.items():
+            sl = r["slices"]; a, b = sl["new_NDCG@10"].dropna(), sl["old_NDCG@10"].dropna()
+            rows.append({"Model": LABEL[n], "HR@10 on purchases of NEW items": sl["new_HR@10"].dropna().mean(), "NDCG@10 on purchases of NEW items": a.mean(), "users with a new-item purchase": len(a),
+                         "NDCG@10 on ordinary purchases": b.mean(), "users with an ordinary purchase": len(b)})
+        if rows and rows[0]["users with a new-item purchase"] > 0:
+            md += ["## E2 (new items): purchases of items with no history in the fit data\n", "Same scoring pass as Table III; a user can appear in both columns.\n", md_table(pd.DataFrame(rows)), ""]
+        if "hybrid_adaptive" in res and "als" in res and "content" in res:
+            hy = res["hybrid_adaptive"]["per_user"]["NDCG@10"].values; ex = []
+            for n in ("als", "content"):
+                diff, lo, hi, p, padj = paired_bootstrap(hy, res[n]["per_user"]["NDCG@10"].values, 2)
+                ex.append({"Hybrid minus": LABEL[n], "mean NDCG@10 difference": diff, "95% CI low": lo, "95% CI high": hi, "p (Bonferroni, x2)": (f"<{2/B:.3f}" if p <= 1 / B else f"{padj:.3f}")})
+            md += ["## Hybrid against its own components (extra comparison, 2 tests)\n", md_table(pd.DataFrame(ex), 6), ""]
     if split == "test":
         vres, _ = load(dataset, "val")
         if vres:

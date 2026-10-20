@@ -1,15 +1,15 @@
-"""E3: training-size sweep on the CONTROL data, scored on VALIDATION only (the locked test is not used).
+"""E3: training-size sweep (python e3_sweep.py [control|beauty]) on the CONTROL or BEAUTY data, scored on VALIDATION only (the locked test is not used).
 Random subsets (seed 42) of 25 / 50 / 100% of the training interactions; frozen settings; all fractions are evaluated
 on the same users (those with history even in the 25% subset), so the curves are comparable."""
-import json, numpy as np, pandas as pd
+import sys, json, numpy as np, pandas as pd
 from config import PROCESSED_DIR, ROOT, SEED, MANIFEST_DIR
 from evaluate import user_sets, warm_eval_users, evaluate_batch
 import models as M
 from baselines import build_rankings
 
-def main():
-    cfg = json.loads((MANIFEST_DIR / "frozen_settings.json").read_text())["control"]
-    rd = lambda n: pd.read_csv(PROCESSED_DIR / f"control_{n}.csv.gz", parse_dates=["purchase_date"])
+def main(ds="control"):
+    cfg = json.loads((MANIFEST_DIR / "frozen_settings.json").read_text())[ds]
+    rd = lambda n: pd.read_csv(PROCESSED_DIR / f"{ds}_{n}.csv.gz", parse_dates=["purchase_date"])
     train, val = rd("train"), rd("val")
     n_users, n_items = int(max(train.u.max(), val.u.max())) + 1, int(max(train.i.max(), val.i.max())) + 1
     perm = np.random.default_rng(SEED).permutation(len(train)); subs = {f: train.iloc[np.sort(perm[:int(len(train) * f)])] for f in (0.25, 0.5, 1.0)}
@@ -22,12 +22,16 @@ def main():
         fns = {"Popularity": lambda ub: np.tile(sv, (len(ub), 1)),
                "Item-kNN": M.knn_score_fn(R, M.prune_top_k(M.knn_similarity(R, p["shrink"]), p["k"]), tb),
                "ALS": M.factor_score_fn(M.fit_als(R, a["factors"], a["reg"], a["alpha"]), tb)}
+        if ds == "beauty":
+            from hybrid import tfidf, content_score_fn
+            texts = pd.read_csv(PROCESSED_DIR / "beauty_items.csv.gz").text.fillna("").values; c = cfg["content"]
+            ct = content_score_fn(R, tfidf(tr, texts, n_items, c["max_features"], tuple(c["ngram"]), r"(?u)\b[a-z][a-z]+\b")); fns["Content-based"] = lambda ub, ct=ct, tb=tb: ct(ub) + tb
         for name, fn in fns.items():
             _, s = evaluate_batch(fn, R, rel, users, n_items); rows.append({"training data": f"{int(f*100)}%", "interactions": len(tr), "model": name, "NDCG@10": s["NDCG@10"], "HR@10": s["HR@10"]})
-    d = pd.DataFrame(rows); wide = d.pivot(index="model", columns="training data", values="NDCG@10")[["25%", "50%", "100%"]]
-    md = ["# E3: training-size sweep (control data, validation only; from src/e3_sweep.py)\n", f"Evaluated on the same {len(users):,} users in every row.\n",
+    d = pd.DataFrame(rows); wide = d.pivot(index="model", columns="training data", values="NDCG@10")[["25%", "50%", "100%"]]; ds_name = "control data" if ds == "control" else "real Amazon Beauty data"
+    md = [f"# E3: training-size sweep ({ds_name}, validation only; from src/e3_sweep.py)\n", f"Evaluated on the same {len(users):,} users in every row.\n",
           "NDCG@10 by share of training data used:\n", wide.round(5).to_markdown(), "\nDetail:\n", d.round(5).to_markdown(index=False)]
-    (ROOT / "reports" / "e3_training_size_control.md").write_text("\n".join(md) + "\n"); print("\n".join(md))
+    (ROOT / "reports" / f"e3_training_size_{ds}.md").write_text("\n".join(md) + "\n"); print("\n".join(md))
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1] if len(sys.argv) > 1 else "control")
