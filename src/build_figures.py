@@ -33,26 +33,41 @@ def fig_models():
     fig.legend(handles=[Line2D([], [], marker="s", ls="", color=c, markersize=9, label=l) for c, l in ((GREY, "random reference"), (BLUE, "tuned popularity"), (ORANGE, "personalised / content models"))],
                loc="lower center", ncol=3, frameon=False, fontsize=9, labelcolor=INK2)
     fig.suptitle("Locked-test accuracy: real signal in the control data, none in the 1M file", color=INK, fontsize=11, x=0.01, ha="left")
-    fig.tight_layout(rect=(0, 0.07, 1, 0.94)); fig.savefig(FIG / "fig_models_test.png", dpi=150, facecolor=SURF); plt.close(fig)
+    fig.tight_layout(rect=(0, 0.07, 1, 0.94)); fig.savefig(FIG / "fig_models_checks.png", dpi=150, facecolor=SURF); plt.close(fig)
 
-def fig_e3():
+def fig_beauty():
+    res, _ = load("beauty", "test"); names = sorted(res, key=lambda n: res[n]["summary"]["NDCG@10"])
+    mean = [res[n]["summary"]["NDCG@10"] for n in names]; ci = [boot_ci(res[n]["per_user"]["NDCG@10"].values) for n in names]
+    fig, ax = plt.subplots(figsize=(7.6, 4.4), facecolor=SURF); y = np.arange(len(names)); style(ax)
+    cols = [GREY if n == "random" else BLUE if n == "popularity" else ORANGE for n in names]
+    ax.barh(y, mean, color=cols, height=0.55, zorder=3, edgecolor=SURF, linewidth=2)
+    ax.errorbar(mean, y, xerr=[[m - c[0] for m, c in zip(mean, ci)], [c[1] - m for m, c in zip(mean, ci)]], fmt="none", ecolor=INK, elinewidth=1.2, capsize=3, zorder=4)
+    for yi, m, c in zip(y, mean, ci): ax.annotate(f"{m:.4f}", (c[1], yi), xytext=(6, -3), textcoords="offset points", color=INK, fontsize=8)
+    ax.set_yticks(y); ax.set_yticklabels([SHORT[n] for n in names], color=INK, fontsize=9); ax.set_xlim(0, 0.0315)
+    ax.set_xlabel("NDCG@10 on the locked test (bars start at zero; whiskers = 95% bootstrap CI over users)", color=INK2, fontsize=8)
+    ax.set_title("Real Amazon Beauty data: personalised models beat popularity", color=INK, fontsize=10, loc="left")
+    fig.legend(handles=[Line2D([], [], marker="s", ls="", color=c, markersize=9, label=l) for c, l in ((GREY, "random reference"), (BLUE, "tuned popularity"), (ORANGE, "personalised / content models"))], loc="lower center", ncol=3, frameon=False, fontsize=9, labelcolor=INK2)
+    fig.tight_layout(rect=(0, 0.07, 1, 1)); fig.savefig(FIG / "fig_models_test.png", dpi=150, facecolor=SURF); plt.close(fig)
+
+def fig_e3(ds="control"):
     d = pd.read_csv(ROOT / "reports" / "e3_training_size_control.md", sep="|", skiprows=lambda i: False, engine="python", on_bad_lines="skip") if False else None
     import re
-    txt = (ROOT / "reports" / "e3_training_size_control.md").read_text(); rows = {}
+    txt = (ROOT / "reports" / f"e3_training_size_{ds}.md").read_text(); rows = {}
     for line in txt.split("Detail:")[0].splitlines():
-        m = re.match(r"\|\s*(ALS|Item-kNN|Popularity)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|", line)
+        m = re.match(r"\|\s*(ALS|Item-kNN|Popularity|Content-based)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|\s*([\d.]+)\s*\|", line)
         if m: rows[m.group(1)] = [float(m.group(i)) for i in (2, 3, 4)]
     fig, ax = plt.subplots(figsize=(6.4, 4.2), facecolor=SURF); ax.set_facecolor(SURF); x = [25, 50, 100]
     ax.grid(True, color=GRID, linewidth=0.8, zorder=0); ax.tick_params(colors=INK2, labelsize=8)
     for s in ("top", "right"): ax.spines[s].set_visible(False)
     for s in ("left", "bottom"): ax.spines[s].set_color(AXIS)
-    for name, col in (("Popularity", BLUE), ("Item-kNN", ORANGE), ("ALS", "#1baf7a")):
+    for name, col in (("Popularity", BLUE), ("Item-kNN", ORANGE), ("ALS", "#1baf7a"), ("Content-based", "#8a3fc7")):
+        if name not in rows: continue
         ax.plot(x, rows[name], color=col, linewidth=2, marker="o", markersize=7, markeredgecolor=SURF, markeredgewidth=2, zorder=3)
         ax.annotate(name, (100, rows[name][2]), xytext=(8, 0), textcoords="offset points", color=INK, fontsize=9, va="center")
     ax.set_xticks(x); ax.set_xticklabels(["25%", "50%", "100%"]); ax.set_xlim(20, 118)
     ax.set_xlabel("Share of training data used", color=INK2, fontsize=9); ax.set_ylabel("NDCG@10 (validation)", color=INK2, fontsize=9)
-    ax.set_title("E3: item-kNN needs data; with 25% it falls below popularity", color=INK, fontsize=10, loc="left")
-    fig.tight_layout(); fig.savefig(FIG / "fig_e3_training_size.png", dpi=150, facecolor=SURF); plt.close(fig)
+    ax.set_title("E3: collaborative models need data" + (" (real Beauty data)" if ds == "beauty" else " (control data)"), color=INK, fontsize=10, loc="left")
+    fig.tight_layout(); fig.savefig(FIG / ("fig_e3_training_size_beauty.png" if ds == "beauty" else "fig_e3_training_size.png"), dpi=150, facecolor=SURF); plt.close(fig)
 
 def fig_signal():
     df = pd.read_csv(PROCESSED_DIR / "interactions_full.csv.gz", parse_dates=["purchase_date"])
@@ -74,4 +89,4 @@ def fig_signal():
     fig.tight_layout(rect=(0, 0, 1, 0.92)); fig.savefig(FIG / "fig_signal_diagnostics.png", dpi=150, facecolor=SURF); plt.close(fig)
 
 if __name__ == "__main__":
-    fig_models(); fig_e3(); fig_signal(); print("figures written:", sorted(p.name for p in FIG.glob("fig_*.png")))
+    fig_models(); fig_beauty(); fig_e3(); fig_e3("beauty"); fig_signal(); print("figures written:", sorted(p.name for p in FIG.glob("fig_*.png")))
