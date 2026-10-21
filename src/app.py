@@ -97,7 +97,7 @@ tab1, tab2, tab3 = st.tabs(["For a shopper", "Similar products", "Results"])
 D = load(); items = D["items"]
 
 with tab1:
-    st.markdown('<div class="note">The model learned only from each shopper's earlier purchases. A green tick marks a recommended product the shopper really bought <i>afterwards</i>.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="note">The model learned only from each shopper’s earlier purchases. A green tick marks a recommended product the shopper really bought <i>afterwards</i>.</div>', unsafe_allow_html=True)
     if "u" not in st.session_state: st.session_state["u"] = int(D["good"][0])
     c1, c2, _ = st.columns([1.5, 2, 3], vertical_alignment="bottom")
     if c2.button("Show another shopper", type="primary"):
