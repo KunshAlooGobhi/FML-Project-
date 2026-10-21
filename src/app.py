@@ -92,12 +92,12 @@ def mini(item, items):
     return f'<div class="card" style="flex:1;min-width:0"><div class="thumb sm" style="{img}"></div><div class="grow"><div class="cmeta" style="color:{INK};font-weight:600;font-size:.82rem;line-height:1.25">{esc(t)}</div></div></div>'
 
 st.markdown("""<div class="hero"><h1>Product recommender</h1>
-<p>What should an online shop show each customer? Real Amazon beauty shoppers: compare the recommendations our model makes with the best-seller list everyone sees.</p></div>""", unsafe_allow_html=True)
+<p>What should an online shop show each customer? Amazon beauty shoppers: compare the recommendations our model makes with the best-seller list everyone sees.</p></div>""", unsafe_allow_html=True)
 tab1, tab2, tab3 = st.tabs(["For a shopper", "Similar products", "Results"])
 D = load(); items = D["items"]
 
 with tab1:
-    st.markdown('<div class="note"><b>Real data.</b> Real Amazon beauty reviews (2002 to 2014). The model learned only from purchases before the cut-off date; the green tick marks products the shopper really bought <i>after</i> it.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="note">The model learned only from each shopper's earlier purchases. A green tick marks a recommended product the shopper really bought <i>afterwards</i>.</div>', unsafe_allow_html=True)
     if "u" not in st.session_state: st.session_state["u"] = int(D["good"][0])
     c1, c2, _ = st.columns([1.5, 2, 3], vertical_alignment="bottom")
     if c2.button("Show another shopper", type="primary"):
@@ -111,7 +111,7 @@ with tab1:
         sc = D["hybrid"](np.array([u]))[0].copy(); sc[bought] = -np.inf; top = np.argsort(-sc)[:10]
         bs = set(bought.tolist()); pop_top = [i for i in D["pop"] if i not in bs][:10]; later = D["rel"][u]
         ha, hb = sum(i in later for i in top), sum(i in later for i in pop_top)
-        st.markdown(f"**Shopper {u}** bought {len(bought)} products before the cut-off. Most recent:")
+        st.markdown(f"**Shopper {u}** bought {len(bought)} products earlier. Most recent:")
         st.markdown('<div style="display:flex;gap:8px">' + "".join(mini(i, items) for i in D["last"].get(u, [])) + "</div>", unsafe_allow_html=True)
         st.markdown(f'<div class="verdict">Of the 10 products recommended to this shopper, <b class="good">{ha}</b> were things they really bought afterwards. '
                     f'The best-seller list got <b class="amber">{hb}</b>.</div>', unsafe_allow_html=True)
